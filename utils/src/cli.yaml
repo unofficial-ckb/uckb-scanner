@@ -1,0 +1,16 @@
+name: UCKB Scanner
+version: "0.1.0"
+about: |
+    [Unofficial] Gather statistics on CKB.
+author: Boyu Yang <yangby@cryptape.com>
+args:
+    - url:
+        help: Specify a HTTP address of a JSON-RPC server.
+        long: url
+        takes_value: true
+        required: true
+    - db-uri:
+        help: Specify a PostgreSQL connection URI.
+        long: db-uri
+        takes_value: true
+        required: true

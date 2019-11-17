@@ -1,0 +1,14 @@
+[package]
+name = "uckb-scanner"
+version = "0.1.0"
+authors = ["Boyu Yang <yangby@cryptape.com>"]
+edition = "2018"
+
+[dependencies]
+uckb-jsonrpc-interfaces = { git = "https://github.com/unofficial-ckb/uckb-jsonrpc-sdk.git", rev = "a8316e2" }
+postgres = "~0.15"
+failure = "~0.1"
+property = "~0.2"
+
+[badges]
+travis-ci = { repository = "unofficial-ckb/uckb-scanner" }

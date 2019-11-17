@@ -6,4 +6,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-fn main() {}
+pub mod error;
+
+mod storage;
+
+pub use storage::Storage;
