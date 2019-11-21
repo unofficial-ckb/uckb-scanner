@@ -97,12 +97,12 @@ impl Storage {
     fn check_current_block(&self) -> Result<Option<u64>> {
         let records = self
             .conn()
-            .query("SELECT max(number) FROM block_headers;", &[])?;
-        if records.is_empty() {
+            .query("SELECT COALESCE(MAX(number), -1) FROM block_headers;", &[])?;
+        let record = records.get(0);
+        let number: i64 = record.get(0);
+        if number == -1 {
             Ok(None)
         } else {
-            let record = records.get(0);
-            let number: i64 = record.get(0);
             Ok(Some(number as u64))
         }
     }
