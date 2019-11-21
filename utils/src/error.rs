@@ -12,8 +12,6 @@ use failure::Fail;
 
 use uckb_jsonrpc_client::{sdk::prelude::Error as RpcError, url};
 
-use kernel;
-
 #[derive(Debug, Fail)]
 pub(crate) enum Error {
     #[fail(display = "internal error: should be unreachable, {}", _0)]

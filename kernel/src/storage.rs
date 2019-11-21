@@ -39,7 +39,7 @@ impl Storage {
     pub fn insert_block(&self, block: &core::BlockView) -> Result<()> {
         if block.number() != 0 && !self.verify_block(block)? {
             return Err(Error::UnknownParentBlock(
-                block.number(),
+                block.number() - 1,
                 block.parent_hash().unpack(),
             ));
         }
@@ -74,6 +74,49 @@ impl Storage {
             }
         }
         Ok(())
+    }
+
+    pub fn remove_block(&self, number: u64) -> Result<()> {
+        if let Some(block_hash) = self.block_hash(number)? {
+            let tx_hashes = self.remove_block_transaction(&block_hash)?;
+            for tx_hash in tx_hashes.into_iter() {
+                self.remove_transaction(&tx_hash)?;
+                self.restore_cell(&tx_hash)?;
+                self.remove_cell(&tx_hash)?;
+            }
+            self.remove_block_proposal(&block_hash)?;
+            let uncle_hashes = self.remove_block_uncle(&block_hash)?;
+            for uncle_hash in uncle_hashes.into_iter() {
+                self.remove_uncle_header(&uncle_hash)?;
+                self.remove_block_proposal(&uncle_hash)?;
+            }
+            self.remove_block_header(&block_hash)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn block_hash(&self, number: u64) -> Result<Option<packed::Byte32>> {
+        let sql = r#"
+            SELECT hash
+              FROM block_headers
+             WHERE 1 = 1
+               AND number = $1
+        ;"#;
+        let records = self.conn().query(sql, &[&(number as i64)])?;
+        if records.is_empty() {
+            Ok(None)
+        } else {
+            let row = records.get(0);
+            let hash_vec: Vec<u8> = row.get(0);
+            if hash_vec.len() == 32 {
+                let mut hash_array = [0u8; 32];
+                hash_array.copy_from_slice(&hash_vec[..]);
+                Ok(Some(hash_array.pack()))
+            } else {
+                Err(Error::Data("incorrect block hash".to_owned()))
+            }
+        }
     }
 
     fn is_first_run(&self) -> Result<bool> {
@@ -278,7 +321,8 @@ impl Storage {
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
             )
-            ON CONFLICT DO NOTHING;"#;
+            ON CONFLICT DO NOTHING
+        ;"#;
         let nonce: u128 = block.nonce();
         let (dao_c, dao_ar, dao_s, dao_u) = extract_dao(block.dao().raw_data().as_ref());
         self.conn()
@@ -308,6 +352,14 @@ impl Storage {
             .map_err(Into::into)
     }
 
+    fn remove_block_header(&self, block_hash: &packed::Byte32) -> Result<()> {
+        let sql = r#"DELETE FROM block_headers WHERE hash = $1;"#;
+        self.conn()
+            .execute(sql, &[&block_hash.raw_data().as_ref()])
+            .map(|_| ())
+            .map_err(Into::into)
+    }
+
     fn insert_block_uncle(
         &self,
         block_hash: &packed::Byte32,
@@ -320,7 +372,8 @@ impl Storage {
             ) VALUES (
                 $1, $2, $3
             )
-            ON CONFLICT DO NOTHING;"#;
+            ON CONFLICT DO NOTHING
+        ;"#;
         self.conn()
             .execute(
                 sql,
@@ -334,6 +387,31 @@ impl Storage {
             .map_err(Into::into)
     }
 
+    fn remove_block_uncle(&self, block_hash: &packed::Byte32) -> Result<Vec<packed::Byte32>> {
+        let sql = r#"
+            DELETE FROM block_uncles
+             WHERE block_hash = $1
+         RETURNING uncle_hash
+        ;"#;
+        self.conn()
+            .query(sql, &[&block_hash.raw_data().as_ref()])
+            .map_err(Into::into)
+            .and_then(|ref rows| {
+                rows.iter()
+                    .map(|ref row| {
+                        let hash_vec: Vec<u8> = row.get(0);
+                        if hash_vec.len() == 32 {
+                            let mut hash_array = [0u8; 32];
+                            hash_array.copy_from_slice(&hash_vec[..]);
+                            Ok(hash_array.pack())
+                        } else {
+                            Err(Error::Data("incorrect uncle hash".to_owned()))
+                        }
+                    })
+                    .collect::<Result<Vec<packed::Byte32>>>()
+            })
+    }
+
     fn insert_uncle_header(&self, uncle: &core::UncleBlockView) -> Result<()> {
         let sql = r#"
             INSERT INTO uncle_headers (
@@ -344,7 +422,8 @@ impl Storage {
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
             )
-            ON CONFLICT DO NOTHING;"#;
+            ON CONFLICT DO NOTHING
+        ;"#;
         let (dao_c, dao_ar, dao_s, dao_u) = extract_dao(uncle.dao().raw_data().as_ref());
         self.conn()
             .execute(
@@ -373,6 +452,22 @@ impl Storage {
             .map_err(Into::into)
     }
 
+    fn remove_uncle_header(&self, uncle_hash: &packed::Byte32) -> Result<()> {
+        let sql = r#"
+            DELETE FROM uncle_headers uh
+                  WHERE 1 = 1
+                    AND hash = $1
+                    AND NOT EXISTS (
+                        SELECT 1
+                          FROM block_uncles bu
+                         WHERE bu.uncle_hash = uh.hash)
+        ;"#;
+        self.conn()
+            .execute(sql, &[&uncle_hash.raw_data().as_ref()])
+            .map(|_| ())
+            .map_err(Into::into)
+    }
+
     fn insert_block_proposal(
         &self,
         block_hash: &packed::Byte32,
@@ -385,7 +480,8 @@ impl Storage {
             ) VALUES (
                 $1, $2, $3
             )
-            ON CONFLICT DO NOTHING;"#;
+            ON CONFLICT DO NOTHING
+        ;"#;
         self.conn()
             .execute(
                 sql,
@@ -395,6 +491,26 @@ impl Storage {
                     &index,
                 ],
             )
+            .map(|_| ())
+            .map_err(Into::into)
+    }
+
+    fn remove_block_proposal(&self, block_hash: &packed::Byte32) -> Result<()> {
+        let sql = r#"
+            DELETE FROM block_proposals bp
+                  WHERE 1 = 1
+                    AND block_hash = $1
+                    AND NOT EXISTS (
+                        SELECT 1
+                          FROM block_headers bh
+                         WHERE bh.hash = bp.block_hash)
+                    AND NOT EXISTS (
+                        SELECT 1
+                          FROM block_uncles bu
+                         WHERE bu.uncle_hash = bp.block_hash)
+        ;"#;
+        self.conn()
+            .execute(sql, &[&block_hash.raw_data().as_ref()])
             .map(|_| ())
             .map_err(Into::into)
     }
@@ -411,7 +527,8 @@ impl Storage {
             ) VALUES (
                 $1, $2, $3
             )
-            ON CONFLICT DO NOTHING;"#;
+            ON CONFLICT DO NOTHING
+        ;"#;
         self.conn()
             .execute(
                 sql,
@@ -425,6 +542,31 @@ impl Storage {
             .map_err(Into::into)
     }
 
+    fn remove_block_transaction(&self, block_hash: &packed::Byte32) -> Result<Vec<packed::Byte32>> {
+        let sql = r#"
+            DELETE FROM block_transactions
+             WHERE block_hash = $1
+         RETURNING tx_hash
+        ;"#;
+        self.conn()
+            .query(sql, &[&block_hash.raw_data().as_ref()])
+            .map_err(Into::into)
+            .and_then(|ref rows| {
+                rows.iter()
+                    .map(|ref row| {
+                        let hash_vec: Vec<u8> = row.get(0);
+                        if hash_vec.len() == 32 {
+                            let mut hash_array = [0u8; 32];
+                            hash_array.copy_from_slice(&hash_vec[..]);
+                            Ok(hash_array.pack())
+                        } else {
+                            Err(Error::Data("incorrect transaction hash".to_owned()))
+                        }
+                    })
+                    .collect::<Result<Vec<packed::Byte32>>>()
+            })
+    }
+
     fn insert_transaction(&self, tx: &core::TransactionView, ref_index: i32) -> Result<()> {
         for (index, cell_dep) in tx.cell_deps().into_iter().enumerate() {
             let sql = r#"
@@ -433,7 +575,8 @@ impl Storage {
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6
                 )
-                ON CONFLICT DO NOTHING;"#;
+                ON CONFLICT DO NOTHING
+            ;"#;
             let tmp: u32 = cell_dep.out_point().index().unpack();
             let dep_type: u8 = cell_dep.dep_type().into();
             self.conn()
@@ -457,7 +600,8 @@ impl Storage {
                 ) VALUES (
                     $1, $2, $3, $4
                 )
-                ON CONFLICT DO NOTHING;"#;
+                ON CONFLICT DO NOTHING
+            ;"#;
             self.conn()
                 .execute(
                     sql,
@@ -477,7 +621,8 @@ impl Storage {
                 ) VALUES (
                     $1, $2, $3, $4
                 )
-                ON CONFLICT DO NOTHING;"#;
+                ON CONFLICT DO NOTHING
+            ;"#;
             self.conn()
                 .execute(
                     sql,
@@ -496,12 +641,33 @@ impl Storage {
             ) VALUES (
                 $1, $2
             )
-            ON CONFLICT DO NOTHING;"#;
+            ON CONFLICT DO NOTHING
+        ;"#;
         self.conn()
             .execute(
                 sql,
                 &[&tx.hash().raw_data().as_ref(), &(tx.version() as i32)],
             )
+            .map(|_| ())
+            .map_err(Into::into)
+    }
+
+    fn remove_transaction(&self, tx_hash: &packed::Byte32) -> Result<()> {
+        let sql = r#"DELETE FROM tx_cell_deps WHERE ref_tx_hash = $1;"#;
+        self.conn()
+            .execute(sql, &[&tx_hash.raw_data().as_ref()])
+            .map(|_| ())?;
+        let sql = r#"DELETE FROM tx_header_deps WHERE ref_tx_hash = $1;"#;
+        self.conn()
+            .execute(sql, &[&tx_hash.raw_data().as_ref()])
+            .map(|_| ())?;
+        let sql = r#"DELETE FROM tx_witnesses WHERE ref_tx_hash = $1;"#;
+        self.conn()
+            .execute(sql, &[&tx_hash.raw_data().as_ref()])
+            .map(|_| ())?;
+        let sql = r#"DELETE FROM transactions WHERE hash = $1;"#;
+        self.conn()
+            .execute(sql, &[&tx_hash.raw_data().as_ref()])
             .map(|_| ())
             .map_err(Into::into)
     }
@@ -524,7 +690,8 @@ impl Storage {
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6
                 )
-                ON CONFLICT DO NOTHING;"#;
+                ON CONFLICT DO NOTHING
+            ;"#;
             self.conn().execute(
                 sql,
                 &[
@@ -543,7 +710,8 @@ impl Storage {
                 ) VALUES (
                     $1, $2, $3, $4, $5
                 )
-                ON CONFLICT DO NOTHING;"#;
+                ON CONFLICT DO NOTHING
+            ;"#;
             self.conn().execute(
                 sql,
                 &[
@@ -559,6 +727,57 @@ impl Storage {
         .map_err(Into::into)
     }
 
+    fn remove_cell(&self, tx_hash: &packed::Byte32) -> Result<()> {
+        type Hashes = (packed::Byte32, packed::Byte32, Option<packed::Byte32>);
+        let sql = r#"
+            DELETE FROM cells
+             WHERE tx_hash = $1
+         RETURNING data_hash, lock_hash, type_hash
+        ;"#;
+        let hashes = self
+            .conn()
+            .query(sql, &[&tx_hash.raw_data().as_ref()])
+            .map_err(Into::into)
+            .and_then(|ref rows| {
+                rows.iter()
+                    .map(|ref row| {
+                        let data_hash_vec: Vec<u8> = row.get(0);
+                        if data_hash_vec.len() != 32 {
+                            return Err(Error::Data("incorrect data hash".to_owned()));
+                        }
+                        let lock_hash_vec: Vec<u8> = row.get(1);
+                        if lock_hash_vec.len() != 32 {
+                            return Err(Error::Data("incorrect lock hash".to_owned()));
+                        }
+                        let type_hash_vec_opt: Option<Vec<u8>> = row.get(2);
+                        if let Some(ref type_hash_vec) = type_hash_vec_opt {
+                            if type_hash_vec.len() != 32 {
+                                return Err(Error::Data("incorrect type hash".to_owned()));
+                            }
+                        }
+                        let mut hash_array = [0u8; 32];
+                        hash_array.copy_from_slice(&data_hash_vec[..]);
+                        let data_hash = hash_array.pack();
+                        hash_array.copy_from_slice(&lock_hash_vec[..]);
+                        let lock_hash = hash_array.pack();
+                        let type_hash = type_hash_vec_opt.map(|ref type_hash_vec| {
+                            hash_array.copy_from_slice(&type_hash_vec[..]);
+                            hash_array.pack()
+                        });
+                        Ok((data_hash, lock_hash, type_hash))
+                    })
+                    .collect::<Result<Vec<Hashes>>>()
+            })?;
+        for (data_hash, lock_hash, type_hash_opt) in hashes.into_iter() {
+            self.remove_cell_data(&data_hash)?;
+            self.remove_script(&lock_hash)?;
+            if let Some(type_script) = type_hash_opt {
+                self.remove_script(&type_script)?;
+            }
+        }
+        Ok(())
+    }
+
     fn consume_cell(
         &self,
         consumed_tx_hash: &packed::Byte32,
@@ -566,15 +785,15 @@ impl Storage {
         input: &packed::CellInput,
     ) -> Result<()> {
         let sql = r#"
-                UPDATE cells
-                SET
-                    consumed_tx_hash = $1,
-                    consumed_index = $2,
-                    consumed_since = $3
-                WHERE 1 = 1
-                  AND tx_hash = $4
-                  AND index = $5
-                ;"#;
+            UPDATE cells
+               SET
+                   consumed_tx_hash = $1,
+                   consumed_index = $2,
+                   consumed_since = $3
+             WHERE 1 = 1
+               AND tx_hash = $4
+               AND index = $5
+        ;"#;
         let since: u64 = input.since().unpack();
         let tx_hash = input.previous_output().tx_hash();
         let index: u32 = input.previous_output().index().unpack();
@@ -593,6 +812,22 @@ impl Storage {
             .map_err(Into::into)
     }
 
+    fn restore_cell(&self, restored_tx_hash: &packed::Byte32) -> Result<()> {
+        let sql = r#"
+            UPDATE cells
+               SET
+                   consumed_tx_hash = null,
+                   consumed_index = null,
+                   consumed_since = null
+             WHERE 1 = 1
+               AND consumed_tx_hash = $1
+        ;"#;
+        self.conn()
+            .execute(sql, &[&restored_tx_hash.raw_data().as_ref()])
+            .map(|_| ())
+            .map_err(Into::into)
+    }
+
     fn insert_cell_data(&self, data: &packed::Bytes) -> Result<packed::Byte32> {
         let hash = packed::CellOutput::calc_data_hash(data.raw_data().as_ref());
         let sql = r#"
@@ -601,10 +836,27 @@ impl Storage {
             ) VALUES (
                 $1, $2
             )
-            ON CONFLICT (hash) DO NOTHING;"#;
+            ON CONFLICT (hash) DO NOTHING
+        ;"#;
         self.conn()
             .execute(sql, &[&hash.raw_data().as_ref(), &data.raw_data().as_ref()])
             .map(|_| hash)
+            .map_err(Into::into)
+    }
+
+    fn remove_cell_data(&self, hash: &packed::Byte32) -> Result<()> {
+        let sql = r#"
+            DELETE FROM cells_data cd
+             WHERE 1 = 1
+               AND hash = $1
+               AND NOT EXISTS (
+                   SELECT 1
+                     FROM cells c
+                    WHERE c.data_hash = cd.hash)
+        ;"#;
+        self.conn()
+            .execute(sql, &[&hash.raw_data().as_ref()])
+            .map(|_| ())
             .map_err(Into::into)
     }
 
@@ -616,7 +868,8 @@ impl Storage {
             ) VALUES (
                 $1, $2, $3, $4
             )
-            ON CONFLICT (hash) DO NOTHING;"#;
+            ON CONFLICT (hash) DO NOTHING
+        ;"#;
         let hash_type: u8 = script.hash_type().into();
         self.conn()
             .execute(
@@ -632,6 +885,23 @@ impl Storage {
             .map_err(Into::into)
     }
 
+    fn remove_script(&self, hash: &packed::Byte32) -> Result<()> {
+        let sql = r#"
+            DELETE FROM scripts s
+             WHERE 1 = 1
+               AND hash = $1
+               AND NOT EXISTS (
+                   SELECT 1
+                     FROM cells c
+                    WHERE c.lock_hash = s.hash
+                       OR c.type_hash = s.hash)
+        ;"#;
+        self.conn()
+            .execute(sql, &[&hash.raw_data().as_ref()])
+            .map(|_| ())
+            .map_err(Into::into)
+    }
+
     fn verify_block(&self, block: &core::BlockView) -> Result<bool> {
         let sql = r#"
             SELECT 1
@@ -639,7 +909,7 @@ impl Storage {
              WHERE 1 = 1
                AND number = $1
                AND hash = $2
-        "#;
+        ;"#;
         self.conn()
             .query(
                 sql,

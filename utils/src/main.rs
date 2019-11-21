@@ -39,13 +39,30 @@ fn execute() -> error::Result<()> {
 
     loop {
         let tip = client.tip_number()?;
+        let mut rollback_to = None;
         for i in next..=tip {
             log::info!("        synchronize block {} ...", i);
             let block = client.block_by_number(i)?;
-            storage.insert_block(&block)?;
+            let result = storage.insert_block(&block);
+            if let Err(kernel::error::Error::UnknownParentBlock(number, hash)) = result {
+                log::warn!(
+                    "        rollback unknown parent block ({}, {:#x})",
+                    number,
+                    hash
+                );
+                storage.remove_block(number)?;
+                rollback_to = Some(number);
+                break;
+            } else {
+                result?;
+            }
         }
-        next = tip + 1;
-        let wait_secs = time::Duration::from_secs(2);
-        thread::sleep(wait_secs);
+        next = if let Some(rollback_to) = rollback_to {
+            rollback_to
+        } else {
+            let wait_secs = time::Duration::from_secs(2);
+            thread::sleep(wait_secs);
+            tip + 1
+        };
     }
 }

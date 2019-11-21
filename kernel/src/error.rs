@@ -15,6 +15,9 @@ pub enum Error {
     #[fail(display = "db error: {}", _0)]
     Db(postgres::Error),
 
+    #[fail(display = "data error: {}", _0)]
+    Data(String),
+
     #[fail(display = "data error: unknown parent block ({}, {:#x})", _0, _1)]
     UnknownParentBlock(u64, H256),
 }
