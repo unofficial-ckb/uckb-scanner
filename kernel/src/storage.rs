@@ -13,6 +13,7 @@ use uckb_jsonrpc_interfaces::types::{core, packed, prelude::*};
 use crate::error::{Error, Result};
 
 #[derive(Property)]
+#[property(get(public), set(private), mut(disable))]
 pub struct Storage {
     conn: postgres::Connection,
 }
