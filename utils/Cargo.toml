@@ -13,7 +13,7 @@ kernel = { package = "uckb-scanner", version = "~0.1", path = "../kernel" }
 uckb-jsonrpc-client = { git = "https://github.com/unofficial-ckb/uckb-jsonrpc-sdk.git", rev = "23358a5" }
 clap = { version = "~2.33", features = ["yaml"] }
 failure = "~0.1"
-property = "~0.2"
+property = "~0.3"
 log = "~0.4"
 pretty_env_logger = "~0.3"
 

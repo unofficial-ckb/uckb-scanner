@@ -8,7 +8,7 @@ edition = "2018"
 uckb-jsonrpc-interfaces = { git = "https://github.com/unofficial-ckb/uckb-jsonrpc-sdk.git", rev = "23358a5" }
 postgres = "~0.15"
 failure = "~0.1"
-property = "~0.2"
+property = "~0.3"
 
 [badges]
 travis-ci = { repository = "unofficial-ckb/uckb-scanner" }
