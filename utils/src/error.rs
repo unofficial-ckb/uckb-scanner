@@ -1,4 +1,4 @@
-// Copyright (C) 2019 Boyu Yang
+// Copyright (C) 2019-2020 Boyu Yang
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -8,48 +8,24 @@
 
 use std::io;
 
-use failure::Fail;
+use thiserror::Error;
 
-use uckb_jsonrpc_client::{sdk::prelude::Error as RpcError, url};
+use uckb_jsonrpc_client::{error::Error as RpcError, url};
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub(crate) enum Error {
-    #[fail(display = "internal error: should be unreachable, {}", _0)]
+    #[error("internal error: should be unreachable, {0}")]
     Unreachable(String),
 
-    #[fail(display = "io error: {}", _0)]
-    IO(io::Error),
-    #[fail(display = "url error: {}", _0)]
-    Url(url::ParseError),
-    #[fail(display = "rpc error: {}", _0)]
-    Rpc(RpcError),
+    #[error("io error: {0}")]
+    IO(#[from] io::Error),
+    #[error("url error: {0}")]
+    Url(#[from] url::ParseError),
+    #[error("rpc error: {0}")]
+    Rpc(#[from] RpcError),
 
-    #[fail(display = "kernel error: {}", _0)]
-    Kernel(kernel::error::Error),
+    #[error("kernel error: {0}")]
+    Kernel(#[from] kernel::error::Error),
 }
 
 pub(crate) type Result<T> = ::std::result::Result<T, Error>;
-
-impl ::std::convert::From<io::Error> for Error {
-    fn from(error: io::Error) -> Self {
-        Self::IO(error)
-    }
-}
-
-impl ::std::convert::From<url::ParseError> for Error {
-    fn from(error: url::ParseError) -> Self {
-        Self::Url(error)
-    }
-}
-
-impl ::std::convert::From<RpcError> for Error {
-    fn from(error: RpcError) -> Self {
-        Self::Rpc(error)
-    }
-}
-
-impl ::std::convert::From<kernel::error::Error> for Error {
-    fn from(error: kernel::error::Error) -> Self {
-        Self::Kernel(error)
-    }
-}

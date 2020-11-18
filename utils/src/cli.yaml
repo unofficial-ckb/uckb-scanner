@@ -1,16 +1,24 @@
-name: UCKB Scanner
-version: "0.1.0"
+name: uCKB Scanner
 about: |
     [Unofficial] Gather statistics on CKB.
-author: Boyu Yang <yangby@cryptape.com>
-args:
-    - url:
-        help: Specify a HTTP address of a JSON-RPC server.
-        long: url
-        takes_value: true
-        required: true
-    - db-uri:
-        help: Specify a PostgreSQL connection URI.
-        long: db-uri
-        takes_value: true
-        required: true
+settings:
+    - SubcommandRequired
+subcommands:
+    - sync:
+        about: Synchronize the base blockchain data into storage.
+        args:
+            - jsonrpc-url:
+                help: Specify a HTTP address of the JSON-RPC service.
+                long: jsonrpc-url
+                takes_value: true
+                required: true
+            - subscribe-socket:
+                help: Specify a socket address of the subscribe service.
+                long: subscribe-socket
+                takes_value: true
+                required: true
+            - storage-uri:
+                help: Specify a connection URI to storage (only support PostgreSQL).
+                long: storage-uri
+                takes_value: true
+                required: true

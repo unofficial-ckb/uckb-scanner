@@ -1,4 +1,4 @@
-// Copyright (C) 2019 Boyu Yang
+// Copyright (C) 2019-2020 Boyu Yang
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -6,10 +6,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-pub use postgres;
+use std::sync::Arc;
+
+use parking_lot::RwLock;
+use tokio::runtime::Runtime as RawRuntime;
+
+pub use tokio_postgres as postgres;
 
 pub mod error;
 
 mod storage;
+mod utilities;
 
-pub use storage::Storage;
+pub use storage::{traits, Storage};
+
+pub(crate) type Runtime = Arc<RwLock<RawRuntime>>;

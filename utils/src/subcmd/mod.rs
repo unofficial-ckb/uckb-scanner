@@ -6,21 +6,4 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-mod config;
-mod error;
-mod subcmd;
-
-fn main() -> anyhow::Result<()> {
-    env_logger::init();
-
-    log::info!("starting ...");
-
-    let config = config::build_commandline()?;
-    match config {
-        config::AppConfig::Sync(args) => subcmd::sync::execute(args),
-    }?;
-
-    log::info!("done.");
-
-    Ok(())
-}
+pub(crate) mod sync;

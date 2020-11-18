@@ -3,12 +3,22 @@ name = "uckb-scanner"
 version = "0.1.0"
 authors = ["Boyu Yang <yangby@cryptape.com>"]
 edition = "2018"
+description = "[Unofficial] Gather statistics on CKB."
+homepage = "https://github.com/unofficial-ckb/uckb-scanner"
+repository = "https://github.com/unofficial-ckb/uckb-scanner"
+keywords = []
+categories = []
+license = "Apache-2.0 OR MIT"
 
 [dependencies]
-uckb-jsonrpc-interfaces = { git = "https://github.com/unofficial-ckb/uckb-jsonrpc-sdk.git", rev = "8119802" }
-postgres = "~0.15"
-failure = "~0.1"
-property = "~0.3"
+uckb-jsonrpc-core = "0.2.0"
+tokio-postgres = "0.6.0"
+tokio = { version = "0.3.3", features = ["full"] }
+futures = "0.3.8"
+property = "0.3.3"
+thiserror = "1.0.22"
+log = "0.4.11"
+parking_lot = "0.11.1"
 
 [badges]
 travis-ci = { repository = "unofficial-ckb/uckb-scanner" }
