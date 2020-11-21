@@ -7,6 +7,7 @@
 // except according to those terms.
 
 use std::{
+    cmp,
     sync::{atomic, Arc},
     thread,
     time::Duration,
@@ -19,6 +20,11 @@ use tokio::runtime;
 use uckb_jsonrpc_client::Client;
 
 use crate::{config::SyncArgs, error::Result};
+
+fn blocking_n_secs(n: u64) {
+    let wait_secs = Duration::from_secs(n);
+    thread::sleep(wait_secs);
+}
 
 pub(crate) fn execute(args: SyncArgs) -> Result<()> {
     let rt = initialize_runtime().map(sync_lock)?;
@@ -33,31 +39,69 @@ pub(crate) fn execute(args: SyncArgs) -> Result<()> {
     };
     let mut next = storage.initialize()?.map(|n| n + 1).unwrap_or(0);
     log::info!("current storage has base data before height {}", next);
-    loop {
-        let tip = client.get_tip_block_number()?;
+    let mut retry_cnt = 0;
+    let mut failed_cnt = 0;
+    'new_turn: loop {
+        let tip = match client.get_tip_block_number() {
+            Ok(tip) => {
+                failed_cnt = 0;
+                tip
+            }
+            Err(err) => {
+                log::error!("failed to get tip block number since {}", err);
+                failed_cnt += 1;
+                let wait_secs = cmp::min(failed_cnt * failed_cnt, 90);
+                log::trace!("retry after {} secs", wait_secs);
+                blocking_n_secs(wait_secs);
+                continue 'new_turn;
+            }
+        };
         log::info!("current tip number is {}", tip);
+        if tip < next {
+            retry_cnt += 1;
+            let wait_secs = cmp::min(retry_cnt, 10);
+            log::trace!("no new block, retry after {} secs", wait_secs);
+            blocking_n_secs(wait_secs);
+            continue 'new_turn;
+        } else {
+            retry_cnt = 0;
+        }
+
         let mut rollback_to = None;
-        for i in next..=tip {
+        let mut i = next;
+        'sync_block: while i <= tip {
             log::info!("synchronize block {} ...", i);
-            if let Some(block) = client.get_block_by_number(i, None)? {
-                let result = storage.insert_block(&block);
-                if let Err(KernelError::UnknownParentBlock { number, hash }) = result {
-                    log::warn!("rollback unknown parent block ({}, {:#x})", number, hash);
-                    storage.remove_block(number)?;
-                    rollback_to = Some(number);
-                    break;
-                } else {
-                    result?;
+            match client.get_block_by_number(i, None) {
+                Ok(Some(block)) => {
+                    let result = storage.insert_block(&block);
+                    if let Err(KernelError::UnknownParentBlock { number, hash }) = result {
+                        log::warn!("rollback unknown parent block ({}, {:#x})", number, hash);
+                        storage.remove_block(number)?;
+                        rollback_to = Some(number);
+                        break;
+                    } else {
+                        i += 1;
+                        failed_cnt = 0;
+                        result?;
+                    }
                 }
-            } else {
-                break;
+                Ok(None) => {
+                    failed_cnt = 0;
+                    break;
+                }
+                Err(err) => {
+                    log::error!("failed to get block number {} since {}", i, err);
+                    failed_cnt += 1;
+                    let wait_secs = cmp::min(failed_cnt * failed_cnt, 90);
+                    log::trace!("retry after {} secs", wait_secs);
+                    blocking_n_secs(wait_secs);
+                    continue 'sync_block;
+                }
             }
         }
         next = if let Some(rollback_to) = rollback_to {
             rollback_to
         } else {
-            let wait_secs = Duration::from_secs(2);
-            thread::sleep(wait_secs);
             tip + 1
         };
     }
