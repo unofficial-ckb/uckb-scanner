@@ -26,8 +26,8 @@ pub struct Storage {
 
 impl Storage {
     pub fn connect(rt: Runtime, uri: &str) -> Result<Self> {
-        let (client, connection) = rt.read().block_on(pg::connect(uri, pg::NoTls))?;
-        rt.read().spawn(async {
+        let (client, connection) = rt.block_on(pg::connect(uri, pg::NoTls))?;
+        rt.spawn(async {
             if let Err(err) = connection.await {
                 log::error!("connection error: {}", err);
             }
@@ -43,7 +43,7 @@ impl Storage {
         F: Future,
     {
         log::trace!("block on a future");
-        self.runtime().read().block_on(future)
+        self.runtime().block_on(future)
     }
 
     pub fn runtime(&self) -> Runtime {

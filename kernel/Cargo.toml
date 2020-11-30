@@ -11,7 +11,7 @@ categories = []
 license = "Apache-2.0 OR MIT"
 
 [dependencies]
-uckb-jsonrpc-core = "0.2.0"
+uckb-jsonrpc-core = "0.3.0"
 tokio-postgres = "0.6.0"
 tokio = { version = "0.3.5", features = ["full"] }
 futures = "0.3.8"

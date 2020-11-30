@@ -51,8 +51,8 @@ impl BaseData for Storage {
         }
         let rt = self.runtime();
         let cli = self.mut_client();
-        let txn = rt.read().block_on(cli.transaction())?;
-        rt.read().block_on(async {
+        let txn = rt.block_on(cli.transaction())?;
+        rt.block_on(async {
             ops::insert_block_header(&txn, &block.header()).await?;
             let uncle_hashes = block.uncle_hashes().into_iter();
             ops::insert_block_uncles(&txn, &block.hash(), uncle_hashes).await?;
@@ -84,11 +84,11 @@ impl BaseData for Storage {
         log::trace!("remove block {}", number);
         let rt = self.runtime();
         let cli = self.mut_client();
-        let block_hash_opt = rt.read().block_on(ops::query_block_hash(&cli, number))?;
+        let block_hash_opt = rt.block_on(ops::query_block_hash(&cli, number))?;
         if let Some(block_hash) = block_hash_opt {
             log::trace!("remove block {:#}", block_hash);
-            let txn = rt.read().block_on(cli.transaction())?;
-            rt.read().block_on(async {
+            let txn = rt.block_on(cli.transaction())?;
+            rt.block_on(async {
                 let tx_hashes = ops::remove_block_transactions(&txn, &block_hash).await?;
                 for tx_hash in tx_hashes.into_iter() {
                     ops::remove_transaction(&txn, &tx_hash).await?;

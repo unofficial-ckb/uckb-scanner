@@ -27,8 +27,8 @@ fn blocking_n_secs(n: u64) {
 }
 
 pub(crate) fn execute(args: SyncArgs) -> Result<()> {
-    let rt = initialize_runtime().map(sync_lock)?;
-    let rt01 = initialize_runtime01().map(sync_lock)?;
+    let rt = initialize_runtime().map(Arc::new)?;
+    let rt01 = initialize_runtime01().map(RwLock::new).map(Arc::new)?;
     let mut storage = Storage::connect(Arc::clone(&rt), args.storage_uri())?;
     let client = {
         let mut client = Client::new(Arc::clone(&rt), Arc::clone(&rt01));
@@ -129,8 +129,4 @@ pub(crate) fn initialize_runtime01() -> Result<runtime01::Runtime> {
         .name_prefix("runtime01-")
         .build()
         .map_err(Into::into)
-}
-
-pub(crate) fn sync_lock<T>(inner: T) -> Arc<RwLock<T>> {
-    Arc::new(RwLock::new(inner))
 }

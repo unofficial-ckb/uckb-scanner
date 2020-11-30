@@ -8,7 +8,6 @@
 
 use std::sync::Arc;
 
-use parking_lot::RwLock;
 use tokio::runtime::Runtime as RawRuntime;
 
 pub use tokio_postgres as postgres;
@@ -20,4 +19,4 @@ mod utilities;
 
 pub use storage::{traits, Storage};
 
-pub(crate) type Runtime = Arc<RwLock<RawRuntime>>;
+pub(crate) type Runtime = Arc<RawRuntime>;
