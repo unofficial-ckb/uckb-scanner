@@ -49,7 +49,7 @@ impl BaseData for Storage {
                 hash: block.parent_hash().unpack(),
             });
         }
-        let rt = self.runtime_clone();
+        let rt = self.runtime();
         let cli = self.mut_client();
         let txn = rt.read().block_on(cli.transaction())?;
         rt.read().block_on(async {
@@ -82,7 +82,7 @@ impl BaseData for Storage {
 
     fn remove_block(&mut self, number: u64) -> Result<()> {
         log::trace!("remove block {}", number);
-        let rt = self.runtime_clone();
+        let rt = self.runtime();
         let cli = self.mut_client();
         let block_hash_opt = rt.read().block_on(ops::query_block_hash(&cli, number))?;
         if let Some(block_hash) = block_hash_opt {

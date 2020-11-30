@@ -17,9 +17,10 @@ mod operations;
 pub mod traits;
 
 #[derive(Property)]
-#[property(get(crate), set(disable), mut(crate))]
+#[property(get(public), set(disable), mut(crate))]
 pub struct Storage {
     client: pg::Client,
+    #[property(get(disable))]
     runtime: Runtime,
 }
 
@@ -37,7 +38,7 @@ impl Storage {
         })
     }
 
-    fn block_on<F>(&self, future: F) -> F::Output
+    pub fn block_on<F>(&self, future: F) -> F::Output
     where
         F: Future,
     {
@@ -45,7 +46,7 @@ impl Storage {
         self.runtime().read().block_on(future)
     }
 
-    fn runtime_clone(&self) -> Runtime {
+    pub fn runtime(&self) -> Runtime {
         Arc::clone(&self.runtime)
     }
 }
