@@ -19,6 +19,3 @@ property = "0.3.3"
 thiserror = "1.0.22"
 log = "0.4.11"
 parking_lot = "0.11.1"
-
-[badges]
-travis-ci = { repository = "unofficial-ckb/uckb-scanner" }
